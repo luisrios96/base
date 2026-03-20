@@ -1,5 +1,8 @@
 use core::fmt::Debug;
-use std::{sync::Arc, time::{Instant, SystemTime, UNIX_EPOCH}};
+use std::{
+    sync::Arc,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use alloy_consensus::{Eip658Value, Transaction};
 use alloy_eips::{Encodable2718, Typed2718};
