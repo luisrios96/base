@@ -65,6 +65,10 @@ pub struct BuilderConfig {
 
     /// Resource metering provider
     pub metering_provider: SharedMeteringProvider,
+
+    /// URL of the audit-archiver RPC endpoint for rejected transaction forwarding.
+    /// When set, rejected transactions will be forwarded to this endpoint.
+    pub audit_archiver_url: Option<String>,
 }
 
 impl BuilderConfig {
@@ -96,6 +100,7 @@ impl core::fmt::Debug for BuilderConfig {
             .field("execution_metering_mode", &self.execution_metering_mode)
             .field("max_uncompressed_block_size", &self.max_uncompressed_block_size)
             .field("metering_provider", &self.metering_provider)
+            .field("audit_archiver_url", &self.audit_archiver_url)
             .finish()
     }
 }
@@ -119,6 +124,7 @@ impl Default for BuilderConfig {
             execution_metering_mode: ExecutionMeteringMode::Off,
             max_uncompressed_block_size: None,
             metering_provider: Arc::new(NoopMeteringProvider),
+            audit_archiver_url: None,
         }
     }
 }

@@ -1,10 +1,10 @@
 use core::fmt::Debug;
-use std::{sync::Arc, time::Instant};
+use std::{sync::Arc, time::{Instant, SystemTime, UNIX_EPOCH}};
 
 use alloy_consensus::{Eip658Value, Transaction};
 use alloy_eips::{Encodable2718, Typed2718};
 use alloy_evm::Database;
-use alloy_primitives::{BlockHash, Bytes, U256};
+use alloy_primitives::{BlockHash, Bytes, TxHash, U256};
 use alloy_rpc_types_eth::Withdrawals;
 use base_access_lists::FBALBuilderDb;
 use base_alloy_consensus::{OpDepositReceipt, OpTxType};
@@ -30,12 +30,13 @@ use reth_primitives_traits::{InMemorySize, SignedTransaction};
 use reth_revm::{State, context::Block};
 use reth_transaction_pool::{BestTransactionsAttributes, PoolTransaction};
 use revm::{DatabaseCommit, context::result::ResultAndState, interpreter::as_u64_saturated};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
     BuilderConfig, BuilderMetrics, ExecutionInfo, ExecutionMeteringLimitExceeded, PayloadTxsBounds,
-    ResourceLimits, TxResources, TxnExecutionError, TxnOutcome,
+    RejectedTxInfo, ResourceLimits, TxResources, TxnExecutionError, TxnOutcome,
 };
 
 /// Records the priority fee of a rejected transaction with the given reason as a label.
@@ -146,6 +147,8 @@ pub struct OpPayloadBuilderCtx {
     pub extra: FlashblocksExtraCtx,
     /// Builder configuration containing limits and metering settings.
     pub builder_config: BuilderConfig,
+    /// Sender for forwarding rejected transactions to the audit-archiver.
+    pub rejected_tx_sender: Option<mpsc::UnboundedSender<RejectedTxInfo>>,
 }
 
 impl OpPayloadBuilderCtx {
@@ -300,6 +303,24 @@ impl OpPayloadBuilderCtx {
     /// Returns the chain id
     pub fn chain_id(&self) -> u64 {
         self.chain_spec.chain_id()
+    }
+
+    /// Sends a rejected transaction to the audit-archiver forwarder (if configured).
+    ///
+    /// This is a fire-and-forget operation — errors are silently ignored to avoid
+    /// impacting block building performance.
+    fn send_rejected_tx(&self, tx_hash: TxHash, raw_tx: &[u8], reason: &str) {
+        if let Some(sender) = &self.rejected_tx_sender {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+            let info = RejectedTxInfo {
+                tx_hash,
+                raw_tx: Bytes::copy_from_slice(raw_tx),
+                block_number: self.block_number(),
+                reason: reason.to_string(),
+                timestamp: now,
+            };
+            let _ = sender.send(info);
+        }
     }
 }
 
@@ -582,7 +603,9 @@ impl OpPayloadBuilderCtx {
                         let priority_fee = tx.effective_tip_per_gas(base_fee).unwrap_or(0) as f64;
                         record_rejected_tx_priority_fee(&err, priority_fee);
 
+                        let err_message = err.to_string();
                         log_txn(Err(err));
+                        self.send_rejected_tx(tx_hash, &tx.encoded_2718(), &err_message);
                         best_txs.mark_invalid(tx.signer(), tx.nonce());
                         continue;
                     }

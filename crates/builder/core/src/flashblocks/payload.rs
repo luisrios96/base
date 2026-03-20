@@ -47,7 +47,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, metadata::Level, span, warn};
 
 use crate::{
-    BuilderConfig, ExecutionInfo, PayloadBuilder, ResourceLimits,
+    BuilderConfig, ExecutionInfo, PayloadBuilder, RejectedTxInfo, ResourceLimits,
     flashblocks::{
         FlashblocksExtraCtx,
         best_txs::BestFlashblocksTxs,
@@ -103,6 +103,8 @@ pub(super) struct OpPayloadBuilder<Pool, Client> {
     pub config: BuilderConfig,
     /// The metrics for the builder
     pub metrics: Arc<BuilderMetrics>,
+    /// Sender for forwarding rejected transactions to the audit-archiver.
+    pub rejected_tx_sender: Option<mpsc::UnboundedSender<RejectedTxInfo>>,
 }
 
 impl<Pool, Client> OpPayloadBuilder<Pool, Client> {
@@ -115,8 +117,9 @@ impl<Pool, Client> OpPayloadBuilder<Pool, Client> {
         payload_tx: mpsc::Sender<OpBuiltPayload>,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<BuilderMetrics>,
+        rejected_tx_sender: Option<mpsc::UnboundedSender<RejectedTxInfo>>,
     ) -> Self {
-        Self { evm_config, pool, client, payload_tx, ws_pub, config, metrics }
+        Self { evm_config, pool, client, payload_tx, ws_pub, config, metrics, rejected_tx_sender }
     }
 }
 
@@ -205,6 +208,7 @@ where
             metrics: Default::default(),
             extra,
             builder_config: self.config.clone(),
+            rejected_tx_sender: self.rejected_tx_sender.clone(),
         })
     }
 

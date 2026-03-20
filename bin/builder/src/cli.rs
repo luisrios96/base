@@ -93,6 +93,10 @@ pub struct Args {
     #[arg(long = "builder.max-uncompressed-block-size")]
     pub max_uncompressed_block_size: Option<u64>,
 
+    /// URL of the audit-archiver RPC endpoint for forwarding rejected transactions
+    #[arg(long = "builder.audit-archiver-url", env = "BUILDER_AUDIT_ARCHIVER_URL")]
+    pub audit_archiver_url: Option<String>,
+
     /// Buffer size for tx data store (LRU eviction when full)
     #[arg(long = "builder.tx-data-store-buffer-size", default_value = "10000")]
     pub tx_data_store_buffer_size: usize,
@@ -130,6 +134,7 @@ impl Default for Args {
             extra_block_deadline_secs: 20,
             enable_resource_metering: false,
             max_uncompressed_block_size: None,
+            audit_archiver_url: None,
             tx_data_store_buffer_size: 10000,
             sampling_ratio: 100,
             flashblocks: FlashblocksArgs::default(),
@@ -169,6 +174,7 @@ impl Args {
             execution_metering_mode: self.execution_metering_mode,
             max_uncompressed_block_size: self.max_uncompressed_block_size,
             metering_provider,
+            audit_archiver_url: self.audit_archiver_url,
         })
     }
 }
