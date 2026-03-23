@@ -33,7 +33,7 @@ alloy-signer-local.workspace = true
 alloy-rpc-types-eth.workspace = true
 alloy-rpc-types-engine = { workspace = true, features = ["std"] }
 reth-evm = { workspace = true, features = ["std"] }
-base-revm = { workspace = true, features = ["std", "execution"] }
+base-evm = { workspace = true, features = ["reth"] }
 base-blobs.workspace = true
 base-runtime.workspace = true
 base-protocol = { workspace = true, features = ["std"] }

@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 # Core
-base-alloy-evm.workspace = true
+base-evm = { workspace = true, features = ["alloy"] }
 base-proof-client.workspace = true
 base-health = { workspace = true, optional = true }
 base-proof-host = { workspace = true, optional = true }

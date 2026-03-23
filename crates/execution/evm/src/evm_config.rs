@@ -7,7 +7,7 @@ use alloy_consensus::{BlockHeader, Header};
 use alloy_evm::{EvmFactory, FromRecoveredTx, FromTxWithEncoded};
 use base_alloy_chains::BaseUpgrades;
 use base_alloy_consensus::EIP1559ParamError;
-use base_revm::{OpSpecId, OpTransaction};
+use crate::{OpSpecId, OpTransaction};
 use base_execution_chainspec::OpChainSpec;
 use base_execution_primitives::{DepositReceipt, OpPrimitives};
 use reth_chainspec::EthChainSpec;
@@ -68,7 +68,7 @@ fn op_evm_env(
 /// Builds an [`EvmEnv`] for the next block given a parent header.
 fn op_next_evm_env(
     parent: &Header,
-    attributes: &base_revm::OpNextBlockEnvAttributes,
+    attributes: &crate::OpNextBlockEnvAttributes,
     base_fee_per_gas: u64,
     chain_spec: &(impl BaseUpgrades + EthChainSpec),
 ) -> EvmEnv<OpSpecId> {
@@ -183,7 +183,7 @@ where
 {
     type Primitives = N;
     type Error = EIP1559ParamError;
-    type NextBlockEnvCtx = base_revm::OpNextBlockEnvAttributes;
+    type NextBlockEnvCtx = crate::OpNextBlockEnvAttributes;
     type BlockExecutorFactory = OpBlockExecutorFactory<R, Arc<ChainSpec>, EvmF>;
     type BlockAssembler = crate::OpBlockAssembler<ChainSpec>;
 
@@ -349,7 +349,7 @@ mod tests {
         state::AccountInfo,
     };
 
-    use base_revm::{L1_BLOCK_CONTRACT, OpSpecId};
+    use crate::{L1_BLOCK_CONTRACT, OpSpecId};
     use crate::{OpEvmConfig, OpRethReceiptBuilder};
 
     fn create_op_state_provider() -> StateProviderTest {

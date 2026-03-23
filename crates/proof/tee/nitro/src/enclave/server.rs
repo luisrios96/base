@@ -1,7 +1,7 @@
 /// Enclave server — manages keys, attestation, signing, and proof execution.
 use alloy_primitives::{Address, B256, Bytes, U256, b256, keccak256};
 use alloy_signer_local::PrivateKeySigner;
-use base_alloy_evm::OpEvmFactory;
+use base_evm::OpEvmFactory;
 use base_proof_client::{BootInfo, Prologue};
 use base_proof_preimage::PreimageKey;
 use base_proof_primitives::{ProofJournal, ProofResult, Proposal};

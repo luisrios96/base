@@ -8,8 +8,8 @@ pub use alloy_sol_types::SolCall;
 use base_access_lists::FBALBuilderDb;
 pub use base_access_lists::FlashblockAccessList;
 use base_execution_chainspec::OpChainSpec;
-use base_alloy_evm::OpEvmConfig;
-pub use base_revm::OpTransaction;
+use base_evm::OpEvmConfig;
+pub use base_evm::OpTransaction;
 pub use base_test_utils::{
     AccessListContract, ContractFactory, DEVNET_CHAIN_ID, Logic, Logic2, Proxy, SimpleStorage,
     build_test_genesis,
