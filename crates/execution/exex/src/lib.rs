@@ -462,8 +462,7 @@ where
         }
 
         let best_block = self.ctx.provider().best_block_number()?;
-        let is_near_tip =
-            new.tip().number().saturating_sub(latest_stored) < REAL_TIME_BLOCKS_THRESHOLD;
+        let is_near_tip = best_block.saturating_sub(latest_stored) < REAL_TIME_BLOCKS_THRESHOLD;
 
         if is_near_tip {
             debug!(
