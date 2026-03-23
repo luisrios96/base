@@ -10,3 +10,5 @@ etc/scripts/devnet/package-lock.json
 docs/specs/dist/
 docs/specs/.vocs/
 *.log
+cache/
+out/
