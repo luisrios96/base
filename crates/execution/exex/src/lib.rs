@@ -462,11 +462,10 @@ where
         }
 
         let best_block = self.ctx.provider().best_block_number()?;
-        let is_sequential = new.tip().number() == latest_stored + 1;
         let is_near_tip =
-            best_block.saturating_sub(new.tip().number()) < REAL_TIME_BLOCKS_THRESHOLD;
+            new.tip().number().saturating_sub(latest_stored) < REAL_TIME_BLOCKS_THRESHOLD;
 
-        if is_sequential && is_near_tip {
+        if is_near_tip {
             debug!(
                 target: "base::exex",
                 block_number = new.tip().number(),
@@ -486,7 +485,6 @@ where
                 block_number = new.tip().number(),
                 latest_stored,
                 best_block,
-                is_sequential,
                 is_near_tip,
                 "Scheduling batch processing via sync task"
             );
