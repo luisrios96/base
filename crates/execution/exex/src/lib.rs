@@ -18,10 +18,10 @@ use futures::TryStreamExt;
 use reth_execution_types::Chain;
 use reth_exex::{ExExContext, ExExEvent, ExExNotification};
 use reth_node_api::{FullNodeComponents, NodePrimitives, NodeTypes};
-use reth_provider::{BlockHashReader, BlockNumReader, BlockReader, TransactionVariant};
+use reth_provider::{BlockNumReader, BlockReader, TransactionVariant};
 use reth_trie::{HashedPostStateSorted, SortedTrieData, updates::TrieUpdatesSorted};
 use tokio::{sync::watch, task, time};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 // Safety threshold for maximum blocks to prune automatically on startup.
 // If the required prune exceeds this, the node will error out and require manual pruning. Default
@@ -30,9 +30,6 @@ const MAX_PRUNE_BLOCKS_STARTUP: u64 = 1000;
 
 /// How many blocks to process in a single batch before yielding. Default is 50 blocks.
 const SYNC_BLOCKS_BATCH_SIZE: usize = 50;
-
-/// How close to tip before we process blocks in real-time vs batch. Default is 1024 blocks.
-const REAL_TIME_BLOCKS_THRESHOLD: u64 = 1024;
 
 /// How long to sleep when sync task is caught up. Default is 5 seconds.
 const SYNC_IDLE_SLEEP_SECS: u64 = 5;
@@ -231,7 +228,7 @@ where
                 best_block,
                 "Storage behind tip, starting sync immediately"
             );
-            sync_target_tx.send(best_block)?;
+            sync_target_tx.send((best_block, None))?;
         }
 
         let prune_task = OpProofStoragePrunerTask::new(
@@ -309,13 +306,22 @@ where
         Ok(())
     }
 
-    /// Spawn the background sync task and return the target sender
-    fn spawn_sync_task(&self) -> watch::Sender<u64> {
-        let (sync_target_tx, sync_target_rx) = watch::channel(0u64);
+    /// Spawn the background sync task and return the target sender.
+    ///
+    /// The channel carries `(target_block_number, Option<chain>)`.  When a
+    /// chain is present the sync loop can use pre-computed trie data for blocks
+    /// that appear in the chain (fast path).  Gap blocks or blocks whose chain
+    /// was superseded by a newer notification fall back to full execution.
+    fn spawn_sync_task(
+        &self,
+    ) -> watch::Sender<(u64, Option<Arc<Chain<Primitives>>>)> {
+        let (sync_target_tx, sync_target_rx) =
+            watch::channel::<(u64, Option<Arc<Chain<Primitives>>>)>((0, None));
 
         let task_storage = self.storage.clone();
         let task_provider = self.ctx.provider().clone();
         let task_evm_config = self.ctx.evm_config().clone();
+        let verification_interval = self.verification_interval;
 
         self.ctx.task_executor().spawn_critical_task(
             "base::exex::proofs_storage_sync_loop",
@@ -323,24 +329,31 @@ where
                 let storage = task_storage.clone();
                 let task_collector =
                     LiveTrieCollector::new(task_evm_config, task_provider.clone(), &storage);
-                Self::sync_loop(sync_target_rx, task_storage, task_provider, &task_collector).await;
+                Self::sync_loop(
+                    sync_target_rx,
+                    task_storage,
+                    task_provider,
+                    &task_collector,
+                    verification_interval,
+                )
+                .await;
             },
         );
 
         sync_target_tx
     }
 
-    /// Background sync loop that processes blocks up to the target
     async fn sync_loop(
-        mut sync_target_rx: watch::Receiver<u64>,
+        mut sync_target_rx: watch::Receiver<(u64, Option<Arc<Chain<Primitives>>>)>,
         storage: OpProofsStorage<Storage>,
         provider: Node::Provider,
         collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
+        verification_interval: u64,
     ) {
         debug!(target: "base::exex", "Starting proofs storage sync loop");
 
         loop {
-            let target = *sync_target_rx.borrow_and_update();
+            let (target, chain) = sync_target_rx.borrow_and_update().clone();
             let latest = match storage.get_latest_block_number() {
                 Ok(Some((n, _))) => n,
                 Ok(None) => {
@@ -358,43 +371,91 @@ where
                 continue;
             }
 
-            // Process one batch
-            if let Err(e) =
-                Self::process_batch(latest, target, &provider, collector, SYNC_BLOCKS_BATCH_SIZE)
-            {
-                error!(target: "base::exex", error = ?e, "Batch processing failed");
+            let end = (latest + SYNC_BLOCKS_BATCH_SIZE as u64).min(target);
+            info!(
+                target: "base::exex",
+                start = latest,
+                end,
+                "Processing proofs storage sync batch"
+            );
+
+            for block_num in (latest + 1)..=end {
+                if let Err(e) = Self::process_block_with_chain(
+                    block_num,
+                    chain.as_deref(),
+                    collector,
+                    &provider,
+                    verification_interval,
+                ) {
+                    error!(target: "base::exex", block_number = block_num, error = ?e, "Block processing failed");
+                    break;
+                }
             }
 
-            // Yield to allow other tasks to run
             info!(target: "base::exex", latest_stored = latest, target, "Batch processed, yielding");
             task::yield_now().await;
         }
     }
 
-    /// Process a batch of blocks from start to target (up to `batch_size`)
-    fn process_batch(
-        start: u64,
-        target: u64,
-        provider: &Node::Provider,
+    fn process_block_with_chain(
+        block_number: u64,
+        chain: Option<&Chain<Primitives>>,
         collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
-        batch_size: usize,
+        provider: &Node::Provider,
+        verification_interval: u64,
     ) -> eyre::Result<()> {
-        let end = (start + batch_size as u64).min(target);
-        info!(
-            target: "base::exex",
-            start,
-            end,
-            "Processing proofs storage sync batch"
-        );
+        let should_verify =
+            verification_interval > 0 && block_number.is_multiple_of(verification_interval);
 
-        for block_num in (start + 1)..=end {
-            let block = provider
-                .recovered_block(block_num.into(), TransactionVariant::NoHash)?
-                .ok_or_else(|| eyre::eyre!("Missing block {}", block_num))?;
+        if let Some(block) = chain.and_then(|c| c.blocks().get(&block_number)) {
+            if let Some((trie_updates, hashed_state)) =
+                chain.and_then(|c| c.trie_data_at(block_number)).map(|d| {
+                    let SortedTrieData { hashed_state, trie_updates } = d.get();
+                    (trie_updates, hashed_state)
+                })
+            {
+                if !should_verify {
+                    debug!(
+                        target: "base::exex",
+                        block_number,
+                        "Using pre-computed state from notification"
+                    );
 
-            collector.execute_and_store_block_updates(&block)?;
+                    collector.store_block_updates(
+                        block.block_with_parent(),
+                        (**trie_updates).clone(),
+                        (**hashed_state).clone(),
+                    )?;
+
+                    return Ok(());
+                }
+
+                info!(
+                    target: "base::exex",
+                    block_number,
+                    verification_interval,
+                    "Periodic verification: performing full block execution"
+                );
+            }
+
+            debug!(
+                target: "base::exex",
+                block_number,
+                "Block in notification but state updates missing, falling back to execution"
+            );
         }
 
+        debug!(
+            target: "base::exex",
+            block_number,
+            "Fetching block from provider for execution",
+        );
+
+        let block = provider
+            .recovered_block(block_number.into(), TransactionVariant::NoHash)?
+            .ok_or_else(|| eyre::eyre!("Missing block {} in provider", block_number))?;
+
+        collector.execute_and_store_block_updates(&block)?;
         Ok(())
     }
 
@@ -402,7 +463,7 @@ where
         &self,
         notification: ExExNotification<Primitives>,
         collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
-        sync_target_tx: &watch::Sender<u64>,
+        sync_target_tx: &watch::Sender<(u64, Option<Arc<Chain<Primitives>>>)>,
     ) -> eyre::Result<()> {
         let latest_stored = match self.storage.get_latest_block_number()? {
             Some((n, _)) => n,
@@ -412,12 +473,9 @@ where
         };
 
         match &notification {
-            ExExNotification::ChainCommitted { new } => self.handle_chain_committed(
-                Arc::clone(new),
-                latest_stored,
-                collector,
-                sync_target_tx,
-            )?,
+            ExExNotification::ChainCommitted { new } => {
+                self.handle_chain_committed(Arc::clone(new), latest_stored, sync_target_tx)?
+            }
             ExExNotification::ChainReorged { old, new } => self.handle_chain_reorged(
                 Arc::clone(old),
                 Arc::clone(new),
@@ -440,8 +498,7 @@ where
         &self,
         new: Arc<Chain<Primitives>>,
         latest_stored: u64,
-        collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
-        sync_target_tx: &watch::Sender<u64>,
+        sync_target_tx: &watch::Sender<(u64, Option<Arc<Chain<Primitives>>>)>,
     ) -> eyre::Result<()> {
         debug!(
             target: "base::exex",
@@ -450,7 +507,6 @@ where
             "ChainCommitted notification received",
         );
 
-        // If tip is not newer than what we have, nothing to do.
         if new.tip().number() <= latest_stored {
             debug!(
                 target: "base::exex",
@@ -461,117 +517,7 @@ where
             return Ok(());
         }
 
-        let best_block = self.ctx.provider().best_block_number()?;
-        let is_near_tip = best_block.saturating_sub(latest_stored) < REAL_TIME_BLOCKS_THRESHOLD;
-
-        if is_near_tip {
-            info!(
-                target: "base::exex",
-                block_number = new.tip().number(),
-                latest_stored,
-                best_block,
-                "Processing in real-time"
-            );
-
-            // Process each block from latest_stored + 1 to tip
-            let start = latest_stored.saturating_add(1);
-            for block_number in start..=new.tip().number() {
-                self.process_block(block_number, Some(new.as_ref()), collector)?;
-                let block_hash = self.ctx.provider().block_hash(block_number)?;
-                if let Some(block_hash) = block_hash {
-                    self.ctx.events.send(ExExEvent::FinishedHeight(BlockNumHash::new(
-                        block_number,
-                        block_hash,
-                    )))?;
-                } else {
-                    warn!("Missing block hash for number {}", block_number);
-                }
-            }
-        } else {
-            info!(
-                target: "base::exex",
-                block_number = new.tip().number(),
-                latest_stored,
-                best_block,
-                is_near_tip,
-                "Scheduling batch processing via sync task"
-            );
-
-            // Update the sync target to the new tip
-            sync_target_tx.send(new.tip().number())?;
-        }
-
-        Ok(())
-    }
-
-    /// Process a single block - either from chain or provider
-    fn process_block(
-        &self,
-        block_number: u64,
-        chain: Option<&Chain<Primitives>>,
-        collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
-    ) -> eyre::Result<()> {
-        // Check if this block should be verified via full execution
-        let should_verify = self.verification_interval > 0
-            && block_number.is_multiple_of(self.verification_interval);
-
-        // Try to get block data from the chain first
-        // 1. Fast Path: Try to use pre-computed state from the notification
-        if let Some(block) = chain.and_then(|c| c.blocks().get(&block_number)) {
-            // Check if we have BOTH trie updates and hashed state.
-            // If either is missing, we fall back to execution to ensure data integrity.
-            if let Some((trie_updates, hashed_state)) =
-                chain.and_then(|c| c.trie_data_at(block_number)).map(|d| {
-                    let SortedTrieData { hashed_state, trie_updates } = d.get();
-                    (trie_updates, hashed_state)
-                })
-            {
-                // Use fast path only if we're not scheduled to verify this block
-                if !should_verify {
-                    debug!(
-                        target: "base::exex",
-                        block_number,
-                        "Using pre-computed state updates from notification"
-                    );
-
-                    collector.store_block_updates(
-                        block.block_with_parent(),
-                        (**trie_updates).clone(),
-                        (**hashed_state).clone(),
-                    )?;
-
-                    return Ok(());
-                }
-
-                info!(
-                    target: "base::exex",
-                    block_number,
-                    verification_interval = self.verification_interval,
-                    "Periodic verification: performing full block execution"
-                );
-            }
-
-            debug!(
-                target: "base::exex",
-                block_number,
-                "Block present in notification but state updates missing, falling back to execution"
-            );
-        }
-
-        // 2. Slow Path: Block not in chain (or state missing), fetch from provider and execute
-        debug!(
-            target: "base::exex",
-            block_number,
-            "Fetching block from provider for execution",
-        );
-
-        let block = self
-            .ctx
-            .provider()
-            .recovered_block(block_number.into(), TransactionVariant::NoHash)?
-            .ok_or_else(|| eyre::eyre!("Missing block {} in provider", block_number))?;
-
-        collector.execute_and_store_block_updates(&block)?;
+        sync_target_tx.send((new.tip().number(), Some(new)))?;
         Ok(())
     }
 
