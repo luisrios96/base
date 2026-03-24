@@ -10,7 +10,7 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_consensus::BlockHeader;
-use alloy_eips::eip1898::BlockWithParent;
+use alloy_eips::{BlockNumHash, eip1898::BlockWithParent};
 use base_execution_trie::{
     OpProofStoragePrunerTask, OpProofsStorage, OpProofsStore, live::LiveTrieCollector,
 };
@@ -18,10 +18,10 @@ use futures::TryStreamExt;
 use reth_execution_types::Chain;
 use reth_exex::{ExExContext, ExExEvent, ExExNotification};
 use reth_node_api::{FullNodeComponents, NodePrimitives, NodeTypes};
-use reth_provider::{BlockNumReader, BlockReader, TransactionVariant};
+use reth_provider::{BlockHashReader, BlockNumReader, BlockReader, TransactionVariant};
 use reth_trie::{HashedPostStateSorted, SortedTrieData, updates::TrieUpdatesSorted};
 use tokio::{sync::watch, task, time};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 // Safety threshold for maximum blocks to prune automatically on startup.
 // If the required prune exceeds this, the node will error out and require manual pruning. Default
@@ -366,7 +366,7 @@ where
             }
 
             // Yield to allow other tasks to run
-            debug!(target: "base::exex", latest_stored = latest, target, "Batch processed, yielding");
+            info!(target: "base::exex", latest_stored = latest, target, "Batch processed, yielding");
             task::yield_now().await;
         }
     }
@@ -380,7 +380,7 @@ where
         batch_size: usize,
     ) -> eyre::Result<()> {
         let end = (start + batch_size as u64).min(target);
-        debug!(
+        info!(
             target: "base::exex",
             start,
             end,
@@ -465,7 +465,7 @@ where
         let is_near_tip = best_block.saturating_sub(latest_stored) < REAL_TIME_BLOCKS_THRESHOLD;
 
         if is_near_tip {
-            debug!(
+            info!(
                 target: "base::exex",
                 block_number = new.tip().number(),
                 latest_stored,
@@ -477,9 +477,18 @@ where
             let start = latest_stored.saturating_add(1);
             for block_number in start..=new.tip().number() {
                 self.process_block(block_number, Some(new.as_ref()), collector)?;
+                let block_hash = self.ctx.provider().block_hash(block_number)?;
+                if let Some(block_hash) = block_hash {
+                    self.ctx.events.send(ExExEvent::FinishedHeight(BlockNumHash::new(
+                        block_number,
+                        block_hash,
+                    )))?;
+                } else {
+                    warn!("Missing block hash for number {}", block_number);
+                }
             }
         } else {
-            debug!(
+            info!(
                 target: "base::exex",
                 block_number = new.tip().number(),
                 latest_stored,
