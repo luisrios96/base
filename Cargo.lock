@@ -5087,6 +5087,7 @@ dependencies = [
  "base-alloy-flz",
  "base-execution-chainspec",
  "base-execution-evm",
+ "base-execution-forks",
  "base-execution-primitives",
  "base-revm",
  "base-test-utils",
