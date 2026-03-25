@@ -582,7 +582,13 @@ impl OpPayloadBuilderCtx {
                         let priority_fee = tx.effective_tip_per_gas(base_fee).unwrap_or(0) as f64;
                         record_rejected_tx_priority_fee(&err, priority_fee);
 
-                        log_txn(Err(err));
+                        // Log this rejection as it's pretty significant and helps with debugging
+                        warn!(
+                            target: "payload_builder",
+                            message = "Execution metering limit rejected transaction (enforce mode)",
+                            tx_hash = ?tx_hash,
+                            limit = %limit_err,
+                        );
                         best_txs.mark_invalid(tx.signer(), tx.nonce());
                         continue;
                     }
