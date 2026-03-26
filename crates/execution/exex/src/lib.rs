@@ -19,11 +19,11 @@ use base_execution_trie::{
 };
 use futures::TryStreamExt;
 use reth_execution_types::Chain;
-use reth_exex::{ExExContext, ExExEvent, ExExNotification};
+use reth_exex::{ExExContext, ExExEvent, ExExNotification, ExExNotificationsStream};
 use reth_node_api::{FullNodeComponents, NodePrimitives, NodeTypes};
 use reth_provider::{BlockNumReader, BlockReader, TransactionVariant};
 use reth_trie::{HashedPostStateSorted, updates::TrieUpdatesSorted};
-use tokio::task;
+use tokio::{sync::watch, task};
 use tracing::{debug, error, info};
 
 // Safety threshold for maximum blocks to prune automatically on startup.
@@ -221,6 +221,7 @@ where
         // for the first notification.
         let best_block = self.ctx.provider().best_block_number()?;
         let latest_stored = self.storage.get_latest_block_number()?.map(|(n, _)| n).unwrap_or(0);
+        info!(best_block, latest_stored, "best block");
         if latest_stored < best_block {
             info!(
                 target: "base::exex",
@@ -247,8 +248,29 @@ where
             &self.storage,
         );
 
+        self.ctx.notifications.set_without_head();
+
+        info!(target: "base::exex", "Entering exex notification loop");
+
         while let Some(notification) = self.ctx.notifications.try_next().await? {
+            let notification_type = match &notification {
+                ExExNotification::ChainCommitted { new } => {
+                    format!("ChainCommitted(tip={})", new.tip().number())
+                }
+                ExExNotification::ChainReorged { old, new } => {
+                    format!(
+                        "ChainReorged(old_tip={}, new_tip={})",
+                        old.tip().number(),
+                        new.tip().number()
+                    )
+                }
+                ExExNotification::ChainReverted { old } => {
+                    format!("ChainReverted(tip={})", old.tip().number())
+                }
+            };
+            info!(target: "base::exex", notification = %notification_type, "Received exex notification");
             self.handle_notification(notification, &collector, &sync_target)?;
+            info!(target: "base::exex", notification = %notification_type, "Finished processing exex notification");
         }
 
         Ok(())
@@ -315,6 +337,7 @@ where
     fn spawn_sync_task(&self) -> Arc<SyncTarget> {
         let sync_target = Arc::new(SyncTarget::new());
         let task_sync_target = Arc::clone(&sync_target);
+        let target_rx = sync_target.subscribe();
 
         let task_storage = self.storage.clone();
         let task_provider = self.ctx.provider().clone();
@@ -329,6 +352,7 @@ where
                     LiveTrieCollector::new(task_evm_config, task_provider.clone(), &storage);
                 Self::sync_loop(
                     task_sync_target,
+                    target_rx,
                     task_storage,
                     task_provider,
                     &task_collector,
@@ -343,12 +367,13 @@ where
 
     async fn sync_loop(
         sync_target: Arc<SyncTarget>,
+        mut target_rx: watch::Receiver<u64>,
         storage: OpProofsStorage<Storage>,
         provider: Node::Provider,
         collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
         verification_interval: u64,
     ) {
-        debug!(target: "base::exex", "Starting proofs storage sync loop");
+        info!(target: "base::exex", "Starting proofs storage sync loop");
 
         loop {
             let target = sync_target.target();
@@ -365,15 +390,23 @@ where
             };
 
             if latest >= target {
-                sync_target.changed().await;
+                info!(target: "base::exex", latest, target, "Sync loop caught up, waiting for new target");
+                if target_rx.changed().await.is_err() {
+                    error!(target: "base::exex", "Sync target watch channel closed, exiting sync loop");
+                    return;
+                }
+                let new_target = *target_rx.borrow_and_update();
+                info!(target: "base::exex", new_target, "Sync loop woke up with new target");
                 continue;
             }
 
             let end = (latest + SYNC_BLOCKS_BATCH_SIZE as u64).min(target);
             info!(
                 target: "base::exex",
-                start = latest,
+                start = latest + 1,
                 end,
+                target,
+                batch_size = end - latest,
                 "Processing proofs storage sync batch"
             );
 
@@ -481,7 +514,14 @@ where
         }
 
         if let Some(committed_chain) = notification.committed_chain() {
-            self.ctx.events.send(ExExEvent::FinishedHeight(committed_chain.tip().num_hash()))?;
+            let tip = committed_chain.tip().num_hash();
+            debug!(
+                target: "base::exex",
+                block_number = tip.number,
+                block_hash = ?tip.hash,
+                "Sending FinishedHeight event"
+            );
+            self.ctx.events.send(ExExEvent::FinishedHeight(tip))?;
         }
 
         Ok(())
@@ -493,7 +533,7 @@ where
         latest_stored: u64,
         sync_target: &SyncTarget,
     ) -> eyre::Result<()> {
-        debug!(
+        info!(
             target: "base::exex",
             block_number = new.tip().number(),
             block_hash = ?new.tip().hash(),
@@ -501,7 +541,7 @@ where
         );
 
         if new.tip().number() <= latest_stored {
-            debug!(
+            info!(
                 target: "base::exex",
                 block_number = new.tip().number(),
                 latest_stored,
@@ -555,6 +595,7 @@ where
         collector: &LiveTrieCollector<'_, Node::Evm, Node::Provider, Storage>,
     ) -> eyre::Result<()> {
         info!(
+            target: "base::exex",
             old_block_number = old.tip().number(),
             old_block_hash = ?old.tip().hash(),
             new_block_number = new.tip().number(),
