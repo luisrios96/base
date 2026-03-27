@@ -7,8 +7,6 @@ use std::cmp::Ordering;
 use async_trait::async_trait;
 use derive_more::Display;
 use thiserror::Error;
-use tokio::task::yield_now;
-
 use super::{BuildTask, ConsolidateTask, FinalizeTask, GetPayloadTask, InsertTask};
 use crate::{
     BuildTaskError, ConsolidateTaskError, EngineClient, EngineState, FinalizeTaskError,
@@ -228,10 +226,11 @@ impl<EngineClient_: EngineClient> EngineTaskExt for EngineTask<EngineClient_> {
 
             match severity {
                 EngineTaskErrorSeverity::Temporary => {
-                    trace!(target: "engine", error = %e, "Temporary engine error");
+                    debug!(target: "engine", error = %e, "Temporary engine error, retrying after delay");
 
-                    // Yield the task to allow other tasks to execute to avoid starvation.
-                    yield_now().await;
+                    // Sleep before retrying to avoid busy-looping when the EL
+                    // is syncing and returning SYNCING for every FCU call.
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
                     continue;
                 }
