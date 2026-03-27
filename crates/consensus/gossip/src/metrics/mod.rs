@@ -117,7 +117,6 @@ impl Metrics {
 
     /// Initializes metrics to `0` so they can be queried immediately by consumers of prometheus
     /// metrics.
-    #[cfg(feature = "metrics")]
     pub fn zero() {
         // RPC Calls
         base_metrics::set!(gauge, Self::RPC_CALLS, "method", "opp2p_self", 0);
