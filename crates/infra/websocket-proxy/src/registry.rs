@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use axum::extract::ws::Message;
 use futures::{SinkExt, stream::StreamExt};
@@ -9,6 +9,7 @@ use tokio::{
 use tracing::{debug, info, trace, warn};
 
 use crate::{client::ClientConnection, metrics::Metrics};
+
 
 fn get_message_size(msg: &Message) -> u64 {
     match msg {
@@ -22,7 +23,6 @@ fn get_message_size(msg: &Message) -> u64 {
 #[derive(Clone, Debug)]
 pub struct Registry {
     sender: Sender<Message>,
-    metrics: Arc<Metrics>,
     compressed: bool,
     ping_enabled: bool,
     pong_timeout_ms: u64,
@@ -33,13 +33,12 @@ impl Registry {
     /// Creates a new registry with the given broadcast sender and configuration.
     pub const fn new(
         sender: Sender<Message>,
-        metrics: Arc<Metrics>,
         compressed: bool,
         ping_enabled: bool,
         pong_timeout_ms: u64,
         send_timeout_ms: Duration,
     ) -> Self {
-        Self { sender, metrics, compressed, ping_enabled, pong_timeout_ms, send_timeout_ms }
+        Self { sender, compressed, ping_enabled, pong_timeout_ms, send_timeout_ms }
     }
 
     /// Subscribes a client to the broadcast channel and forwards matching messages.
@@ -47,8 +46,7 @@ impl Registry {
         info!(message = "subscribing client", client = client.id());
 
         let mut receiver = self.sender.subscribe();
-        let metrics = Arc::clone(&self.metrics);
-        metrics.new_connections.increment(1);
+        Metrics::new_connections().increment(1);
 
         let filter = client.filter.clone();
         let compressed = self.compressed;
@@ -57,6 +55,7 @@ impl Registry {
 
         let (pong_error_tx, mut pong_error_rx) = tokio::sync::oneshot::channel();
         let client_reader = self.start_reader(ws_receiver, client_id.clone(), pong_error_tx);
+
 
         loop {
             tokio::select! {
@@ -75,14 +74,14 @@ impl Registry {
                                 let send_result = timeout(self.send_timeout_ms, ws_sender.send(msg)).await;
                                 let send_duration = send_start.elapsed();
 
-                                metrics.message_send_duration.record(send_duration);
+                                Metrics::message_send_duration().record(send_duration);
 
                                 match send_result {
                                     Ok(Ok(())) => {
                                         // Success - message sent
                                         trace!(message = "message sent to client", client = client_id);
-                                        metrics.sent_messages.increment(1);
-                                        metrics.bytes_broadcasted.increment(msg_size);
+                                        Metrics::sent_messages().increment(1);
+                                        Metrics::bytes_broadcasted().increment(msg_size);
                                     }
                                     Ok(Err(e)) => {
                                         // Send failed (connection error)
@@ -91,7 +90,7 @@ impl Registry {
                                             client = client_id,
                                             error = e.to_string()
                                         );
-                                        metrics.failed_messages.increment(1);
+                                        Metrics::failed_messages().increment(1);
                                         break;
                                     }
                                     Err(_) => {
@@ -101,7 +100,7 @@ impl Registry {
                                             client = client_id,
                                             timeout_ms = self.send_timeout_ms.as_millis()
                                         );
-                                        metrics.failed_messages.increment(1);
+                                        Metrics::failed_messages().increment(1);
                                         break;
                                     }
                                 }
@@ -115,7 +114,7 @@ impl Registry {
                         }
                         Err(RecvError::Lagged(_)) => {
                             info!(message = "client is lagging", client = client_id);
-                            metrics.lagged_connections.increment(1);
+                            Metrics::lagged_connections().increment(1);
                             break;
                         }
                     }
@@ -129,7 +128,7 @@ impl Registry {
         }
 
         client_reader.abort();
-        metrics.closed_connections.increment(1);
+        Metrics::closed_connections().increment(1);
 
         info!(message = "client disconnected", client = client_id);
     }
@@ -142,7 +141,6 @@ impl Registry {
     ) -> tokio::task::JoinHandle<()> {
         let ping_enabled = self.ping_enabled;
         let pong_timeout_ms = self.pong_timeout_ms;
-        let metrics = Arc::clone(&self.metrics);
 
         tokio::spawn(async move {
             let mut ws_receiver = ws_receiver;
@@ -190,7 +188,7 @@ impl Registry {
                                 client = client_id,
                                 elapsed_ms = last_pong.elapsed().as_millis()
                             );
-                            metrics.client_pong_disconnects.increment(1);
+                            Metrics::client_pong_disconnects().increment(1);
                             let _ = pong_error_tx.send(());
                             return;
                         }
