@@ -726,7 +726,12 @@ where
                 } else {
                     0
                 };
-                BuilderMetrics::record_flashblock_diagnostics(flashblock_index, &diag, info, &limits);
+                BuilderMetrics::record_flashblock_diagnostics(
+                    flashblock_index,
+                    &diag,
+                    info,
+                    &limits,
+                );
                 info!(
                     target: "payload_builder",
                     message = "Flashblock built",
@@ -776,8 +781,7 @@ where
         }
 
         // Record cumulative uncompressed block size
-        BuilderMetrics::block_uncompressed_size()
-            .record(info.cumulative_uncompressed_bytes as f64);
+        BuilderMetrics::block_uncompressed_size().record(info.cumulative_uncompressed_bytes as f64);
 
         debug!(
             target: "payload_builder",
