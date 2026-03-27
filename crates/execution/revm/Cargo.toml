@@ -52,7 +52,6 @@ base-execution-chainspec.workspace = true
 reth-evm = { workspace = true, features = ["test-utils"] }
 reth-revm = { workspace = true, features = ["test-utils"] }
 serde_json = { workspace = true, default-features = false, features = ["alloc", "preserve_order"] }
-base-alloy-evm = { workspace = true, features = ["std", "reth", "execution"] }
 base-execution-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
