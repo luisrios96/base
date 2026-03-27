@@ -10,7 +10,6 @@ use tracing::{debug, info, trace, warn};
 
 use crate::{client::ClientConnection, metrics::Metrics};
 
-
 fn get_message_size(msg: &Message) -> u64 {
     match msg {
         Message::Text(text) => text.len() as u64,
@@ -55,7 +54,6 @@ impl Registry {
 
         let (pong_error_tx, mut pong_error_rx) = tokio::sync::oneshot::channel();
         let client_reader = self.start_reader(ws_receiver, client_id.clone(), pong_error_tx);
-
 
         loop {
             tokio::select! {

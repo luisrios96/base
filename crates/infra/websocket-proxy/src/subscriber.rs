@@ -498,20 +498,14 @@ mod tests {
         let uri1 = server1.uri();
         let listener_clone1 = listener.clone();
 
-        let mut subscriber1 = WebsocketSubscriber::new(
-            uri1.clone(),
-            listener_clone1,
-            SubscriberOptions::default(),
-        );
+        let mut subscriber1 =
+            WebsocketSubscriber::new(uri1.clone(), listener_clone1, SubscriberOptions::default());
 
         let uri2 = server2.uri();
         let listener_clone2 = listener.clone();
 
-        let mut subscriber2 = WebsocketSubscriber::new(
-            uri2.clone(),
-            listener_clone2,
-            SubscriberOptions::default(),
-        );
+        let mut subscriber2 =
+            WebsocketSubscriber::new(uri2.clone(), listener_clone2, SubscriberOptions::default());
 
         let task1 = tokio::spawn(async move {
             subscriber1.run(token_clone1).await;

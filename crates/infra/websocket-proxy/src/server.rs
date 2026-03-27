@@ -27,7 +27,6 @@ use crate::{
     registry::Registry,
 };
 
-
 #[derive(Clone)]
 struct ServerState {
     registry: Registry,

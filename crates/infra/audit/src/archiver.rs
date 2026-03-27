@@ -18,7 +18,6 @@ use crate::{
     storage::EventWriter,
 };
 
-
 /// Archives audit events from Kafka to S3 storage.
 pub struct KafkaAuditArchiver<R, W>
 where

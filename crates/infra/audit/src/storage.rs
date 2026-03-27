@@ -18,7 +18,6 @@ use crate::{
     types::{BundleEvent, BundleId, DropReason, TransactionId},
 };
 
-
 /// S3 key types for storing different event types.
 #[derive(Debug)]
 pub enum S3Key {
