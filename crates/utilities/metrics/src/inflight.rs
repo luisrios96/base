@@ -70,9 +70,7 @@ impl Drop for InflightCounter {
 #[macro_export]
 #[cfg(feature = "metrics")]
 macro_rules! inflight {
-    ($gauge:expr $(,)?) => {{
-        $crate::InflightCounter::new($gauge)
-    }};
+    ($gauge:expr $(,)?) => {{ $crate::InflightCounter::new($gauge) }};
 }
 
 /// No-op version of [`inflight!`] when `metrics` is disabled.

@@ -252,9 +252,7 @@ macro_rules! __describe_metric {
 #[macro_export]
 #[cfg(feature = "metrics")]
 macro_rules! timed {
-    ($metric_handle:expr) => {{
-        $crate::DropTimer::new($metric_handle)
-    }};
+    ($metric_handle:expr) => {{ $crate::DropTimer::new($metric_handle) }};
 }
 
 /// No-op version of [`timed!`] when `metrics` is disabled.
