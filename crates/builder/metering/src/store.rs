@@ -19,8 +19,6 @@ pub struct MeteringStore {
     lru: ConcurrentQueue<TxHash>,
     /// Whether resource metering is enabled.
     metering_enabled: AtomicBool,
-    /// Builder metrics.
-    metrics: BuilderMetrics,
 }
 
 impl core::fmt::Debug for MeteringStore {
@@ -39,7 +37,6 @@ impl MeteringStore {
             by_tx_hash: dashmap::DashMap::new(),
             lru: ConcurrentQueue::bounded(buffer_size),
             metering_enabled: AtomicBool::new(enable_resource_metering),
-            metrics: BuilderMetrics::default(),
         }
     }
 
@@ -48,7 +45,7 @@ impl MeteringStore {
             && let Ok(evicted_hash) = self.lru.pop()
         {
             self.by_tx_hash.remove(&evicted_hash);
-            self.metrics.metering_store_lru_evictions.increment(1);
+            BuilderMetrics::metering_store_lru_evictions().increment(1);
             debug!(
                 target: "metering_store",
                 evicted_tx = ?evicted_hash,
@@ -75,11 +72,11 @@ impl MeteringProvider for MeteringStore {
         }
 
         let Some(entry) = self.by_tx_hash.get(tx_hash) else {
-            self.metrics.metering_unknown_transaction.increment(1);
+            BuilderMetrics::metering_unknown_transaction().increment(1);
             return None;
         };
 
-        self.metrics.metering_known_transaction.increment(1);
+        BuilderMetrics::metering_known_transaction().increment(1);
         Some(entry.clone())
     }
 
