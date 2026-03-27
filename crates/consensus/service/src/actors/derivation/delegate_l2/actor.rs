@@ -264,8 +264,23 @@ where
         }
 
         if target <= self.sent_head {
+            debug!(
+                target: "derivation",
+                target,
+                sent_head = self.sent_head,
+                remote_head,
+                "Target not ahead of sent_head, nothing to sync"
+            );
             return Ok(None);
         }
+
+        info!(
+            target: "derivation",
+            target,
+            sent_head = self.sent_head,
+            remote_head,
+            "Starting sync to new target"
+        );
 
         Ok(Some(target))
     }
@@ -336,6 +351,14 @@ where
             return Ok(self.sent_head);
         }
 
+        info!(
+            target: "derivation",
+            from = self.sent_head + 1,
+            to = self.target_block,
+            blocks = self.target_block - self.sent_head,
+            "Sync from source starting"
+        );
+
         for block_num in (self.sent_head + 1)..=self.target_block {
             if self.cancellation_token.is_cancelled() {
                 info!(target: "derivation", block = block_num, "Sync interrupted by shutdown");
@@ -366,6 +389,13 @@ where
 
             self.sent_head = block_num;
         }
+
+        info!(
+            target: "derivation",
+            sent_head = self.sent_head,
+            target_block = self.target_block,
+            "Sync from source completed"
+        );
 
         self.update_safe_and_finalized().await?;
 

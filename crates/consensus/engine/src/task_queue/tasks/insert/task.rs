@@ -117,6 +117,13 @@ impl<EngineClient_: EngineClient> EngineTaskExt for InsertTask<EngineClient_> {
                 return Err(InsertTaskError::InsertFailed(e));
             }
         };
+        debug!(
+            target: "engine",
+            block_number = self.envelope.execution_payload.block_number(),
+            block_hash = %self.envelope.execution_payload.block_hash(),
+            status = ?response.status,
+            "new_payload response received"
+        );
         if !self.check_new_payload_status(&response.status) {
             return Err(InsertTaskError::UnexpectedPayloadStatus(response.status));
         }

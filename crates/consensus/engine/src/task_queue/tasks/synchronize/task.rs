@@ -67,9 +67,14 @@ impl<EngineClient_: EngineClient> SynchronizeTask<EngineClient_> {
                 Ok(())
             }
             PayloadStatusEnum::Syncing => {
-                // If we're not building a new payload, we're driving EL sync.
-                debug!(target: "engine", "Attempting to update forkchoice state while EL syncing");
-                Ok(())
+                info!(
+                    target: "engine",
+                    unsafe_head = state.sync_state.unsafe_head().block_info.number,
+                    safe_head = state.sync_state.safe_head().block_info.number,
+                    finalized_head = state.sync_state.finalized_head().block_info.number,
+                    "Forkchoice update returned SYNCING, will retry"
+                );
+                Err(SynchronizeTaskError::ELSyncing)
             }
             s => {
                 // Other codes are not expected.

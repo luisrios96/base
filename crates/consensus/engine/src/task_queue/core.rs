@@ -146,6 +146,11 @@ impl<EngineClient_: EngineClient> Engine<EngineClient_> {
         Ok((start.safe, l1_origin_info, system_config))
     }
 
+    /// Returns `true` if the task queue has pending tasks.
+    pub fn has_pending_tasks(&self) -> bool {
+        !self.tasks.is_empty()
+    }
+
     /// Clears the task queue.
     pub fn clear(&mut self) {
         self.tasks.clear();

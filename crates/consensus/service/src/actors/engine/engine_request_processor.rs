@@ -11,6 +11,7 @@ use base_protocol::L2BlockInfo;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
+    time::{Duration, sleep},
 };
 
 use crate::{
@@ -156,7 +157,12 @@ where
                         }
                     }
                     EngineTaskErrorSeverity::Temporary => {
-                        trace!(target: "engine", ?err, "Temporary error draining engine tasks");
+                        debug!(
+                            target: "engine",
+                            ?err,
+                            pending_tasks = self.engine.has_pending_tasks(),
+                            "Temporary error draining engine tasks, will retry"
+                        );
                     }
                 }
             }
@@ -267,6 +273,10 @@ where
                 }
             }
 
+            /// Interval between retry attempts when tasks remain in the queue after
+            /// a temporary error (e.g. EL returning SYNCING).
+            const EL_SYNC_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+
             loop {
                 // Attempt to drain all outstanding tasks from the engine queue before adding new
                 // ones.
@@ -282,8 +292,23 @@ where
                     });
                 }
 
-                // Wait for the next processing request.
-                let Some(request) = request_channel.recv().await else {
+                // Wait for the next processing request. If there are pending tasks
+                // (e.g. from an EL SYNCING response), also retry draining on a timer
+                // so we don't stall forever waiting for a new inbound request.
+                let request = if self.engine.has_pending_tasks() {
+                    tokio::select! {
+                        biased;
+                        req = request_channel.recv() => req,
+                        _ = sleep(EL_SYNC_RETRY_INTERVAL) => {
+                            info!(target: "engine", "Retrying pending engine tasks after EL sync delay");
+                            continue;
+                        }
+                    }
+                } else {
+                    request_channel.recv().await
+                };
+
+                let Some(request) = request else {
                     error!(target: "engine", "Engine processing request receiver closed unexpectedly");
                     return Err(EngineError::ChannelClosed);
                 };

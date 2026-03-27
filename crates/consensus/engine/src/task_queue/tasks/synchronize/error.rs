@@ -21,15 +21,21 @@ pub enum SynchronizeTaskError {
     /// The payload status is unexpected.
     #[error("Unexpected payload status: {0}")]
     UnexpectedPayloadStatus(PayloadStatusEnum),
+    /// The execution layer returned a syncing status for the forkchoice update.
+    ///
+    /// This is a temporary condition: the EL has not yet finished syncing and cannot
+    /// canonicalize blocks. The task will be retried until the EL returns `Valid`.
+    #[error("Execution layer is syncing")]
+    ELSyncing,
 }
 
 impl EngineTaskError for SynchronizeTaskError {
     fn severity(&self) -> EngineTaskErrorSeverity {
         match self {
             Self::FinalizedAheadOfUnsafe(_, _) => EngineTaskErrorSeverity::Critical,
-            Self::ForkchoiceUpdateFailed(_) | Self::UnexpectedPayloadStatus(_) => {
-                EngineTaskErrorSeverity::Temporary
-            }
+            Self::ForkchoiceUpdateFailed(_)
+            | Self::UnexpectedPayloadStatus(_)
+            | Self::ELSyncing => EngineTaskErrorSeverity::Temporary,
             Self::InvalidForkchoiceState => EngineTaskErrorSeverity::Reset,
         }
     }

@@ -66,7 +66,8 @@ impl SealTaskError {
                         SynchronizeTaskError::FinalizedAheadOfUnsafe(_, _) => true,
                         SynchronizeTaskError::ForkchoiceUpdateFailed(_)
                         | SynchronizeTaskError::InvalidForkchoiceState
-                        | SynchronizeTaskError::UnexpectedPayloadStatus(_) => false,
+                        | SynchronizeTaskError::UnexpectedPayloadStatus(_)
+                        | SynchronizeTaskError::ELSyncing => false,
                     }
                 }
                 InsertTaskError::FromBlockError(_)
