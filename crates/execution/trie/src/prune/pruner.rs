@@ -5,8 +5,6 @@ use reth_provider::BlockHashReader;
 use tokio::time::Instant;
 use tracing::{error, info, trace};
 
-#[cfg(feature = "metrics")]
-use crate::prune::metrics::Metrics;
 use crate::{
     OpProofsStorage, OpProofsStore,
     prune::error::{OpProofStoragePrunerResult, PrunerError, PrunerOutput},
@@ -15,7 +13,7 @@ use crate::{
 /// Prunes the proof storage by calling `prune_earliest_state` on the storage provider.
 #[derive(Debug)]
 pub struct OpProofStoragePruner<P, H> {
-    // Database provider for the prune
+    /// Database provider for the prune
     provider: OpProofsStorage<P>,
     /// Reader to fetch block hash by block number
     block_hash_reader: H,
@@ -23,16 +21,11 @@ pub struct OpProofStoragePruner<P, H> {
     min_block_interval: u64,
     /// Maximum number of blocks to prune in one database transaction
     prune_batch_size: u64,
-    // TODO: add timeout - Maximum time for one pruner run. If `None`, no timeout.
-    #[doc(hidden)]
-    #[cfg(feature = "metrics")]
-    metrics: Metrics,
 }
 
 impl<P, H> OpProofStoragePruner<P, H> {
     /// Create a new pruner.
-    #[allow(clippy::missing_const_for_fn)] // not const when `metrics` feature enables Metrics::default()
-    pub fn new(
+    pub const fn new(
         provider: OpProofsStorage<P>,
         block_hash_reader: H,
         min_block_interval: u64,
@@ -43,8 +36,6 @@ impl<P, H> OpProofStoragePruner<P, H> {
             block_hash_reader,
             min_block_interval,
             prune_batch_size,
-            #[cfg(feature = "metrics")]
-            metrics: Metrics::default(),
         }
     }
 }
@@ -155,9 +146,8 @@ where
         let duration = batch_start_time.elapsed();
         let batch_output = PrunerOutput { duration, start_block, end_block, write_counts };
 
-        // Record metrics for this batch
         #[cfg(feature = "metrics")]
-        self.metrics.record_prune_result(batch_output.clone());
+        crate::prune::metrics::Metrics::record_prune_result(batch_output.clone());
 
         info!(
             target: "trie::pruner",

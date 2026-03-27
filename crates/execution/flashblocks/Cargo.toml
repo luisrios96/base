@@ -72,7 +72,7 @@ serde = { workspace = true, features = ["std"] }
 
 # metrics
 metrics.workspace = true
-metrics-derive.workspace = true
+base-metrics = { workspace = true, features = ["metrics"] }
 
 # misc
 url.workspace = true

@@ -82,10 +82,7 @@ derive_more = { workspace = true, features = ["constructor"] }
 
 # metrics
 metrics.workspace = true
-reth-metrics.workspace = true
-
-# enum
-strum.workspace = true
+base-metrics = { workspace = true, features = ["metrics"] }
 
 [dev-dependencies]
 base-execution-chainspec.workspace = true

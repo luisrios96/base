@@ -113,9 +113,9 @@ where
 
         #[cfg(feature = "metrics")]
         {
-            let block_metrics = self.storage.metrics().block_metrics();
-            block_metrics.record_operation_durations(&operation_durations);
-            block_metrics.increment_write_counts(&update_result);
+            let metrics = self.storage.metrics();
+            metrics.record_operation_durations(&operation_durations);
+            metrics.increment_write_counts(&update_result);
         }
 
         info!(
@@ -148,9 +148,9 @@ where
 
         #[cfg(feature = "metrics")]
         {
-            let block_metrics = self.storage.metrics().block_metrics();
-            block_metrics.record_operation_durations(&operation_durations);
-            block_metrics.increment_write_counts(&storage_result);
+            let metrics = self.storage.metrics();
+            metrics.record_operation_durations(&operation_durations);
+            metrics.increment_write_counts(&storage_result);
         }
 
         info!(
@@ -206,8 +206,7 @@ where
 
         #[cfg(feature = "metrics")]
         {
-            let block_metrics = self.storage.metrics().block_metrics();
-            block_metrics.record_operation_durations(&operation_durations);
+            self.storage.metrics().record_operation_durations(&operation_durations);
         }
 
         info!(

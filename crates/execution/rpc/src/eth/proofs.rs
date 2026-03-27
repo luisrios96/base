@@ -14,7 +14,8 @@ use jsonrpsee_types::error::ErrorObject;
 use reth_provider::StateProofProvider;
 use reth_rpc_api::eth::helpers::FullEthApi;
 
-use crate::{metrics::EthApiExtMetrics, state::OpStateProviderFactory};
+use crate::state::OpStateProviderFactory;
+use crate::metrics::EthApiExtMetrics;
 
 #[cfg_attr(not(test), rpc(server, namespace = "eth"))]
 #[cfg_attr(test, rpc(server, client, namespace = "eth"))]
@@ -34,7 +35,6 @@ pub trait EthApiOverride {
 /// Overrides applied to the `eth_` namespace of the RPC API for historical proofs `ExEx`.
 pub struct EthApiExt<Eth, P> {
     state_provider_factory: OpStateProviderFactory<Eth, P>,
-    metrics: EthApiExtMetrics,
 }
 
 impl<Eth, P> EthApiExt<Eth, P>
@@ -45,10 +45,8 @@ where
 {
     /// Creates a new instance of the `EthApiExt`.
     pub fn new(eth_api: Eth, preimage_store: OpProofsStorage<P>) -> Self {
-        let metrics = EthApiExtMetrics::default();
         Self {
             state_provider_factory: OpStateProviderFactory::new(eth_api, preimage_store),
-            metrics,
         }
     }
 }
@@ -67,7 +65,7 @@ where
         block_number: Option<BlockId>,
     ) -> RpcResult<EIP1186AccountProofResponse> {
         let start = Instant::now();
-        self.metrics.get_proof_requests.increment(1);
+        EthApiExtMetrics::get_proof_requests().increment(1);
 
         let storage_keys = keys.iter().map(|key| key.as_b256()).collect::<Vec<_>>();
 
@@ -86,10 +84,10 @@ where
 
         match &result {
             Ok(_) => {
-                self.metrics.get_proof_latency.record(start.elapsed().as_secs_f64());
-                self.metrics.get_proof_successful_responses.increment(1);
+                EthApiExtMetrics::get_proof_latency().record(start.elapsed().as_secs_f64());
+                EthApiExtMetrics::get_proof_successful_responses().increment(1);
             }
-            Err(_) => self.metrics.get_proof_failures.increment(1),
+            Err(_) => EthApiExtMetrics::get_proof_failures().increment(1),
         }
 
         result

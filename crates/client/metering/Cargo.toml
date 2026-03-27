@@ -49,7 +49,7 @@ base-alloy-flz.workspace = true
 
 # metrics
 metrics.workspace = true
-metrics-derive.workspace = true
+base-metrics = { workspace = true, features = ["metrics"] }
 
 # misc
 eyre.workspace = true
