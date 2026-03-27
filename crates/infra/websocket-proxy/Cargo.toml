@@ -16,7 +16,6 @@ workspace = true
 
 [dependencies]
 http.workspace = true
-metrics.workspace = true
 futures.workspace = true
 backoff.workspace = true
 tokio-util.workspace = true

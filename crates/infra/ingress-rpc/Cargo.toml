@@ -12,7 +12,6 @@ workspace = true
 
 [dependencies]
 url.workspace = true
-metrics.workspace = true
 base-revm.workspace = true
 base-bundles.workspace = true
 async-trait.workspace = true
