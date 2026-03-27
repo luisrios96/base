@@ -111,8 +111,8 @@ where
     }
 
     /// Returns the builder URL as a string for use as a metrics label.
-    fn url_label(&self) -> &str {
-        self.builder_url.as_str()
+    fn url_label(&self) -> String {
+        self.builder_url.to_string()
     }
 
     /// Runs the forwarder loop until cancelled.
