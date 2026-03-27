@@ -26,7 +26,9 @@ use revm::{
     state::EvmState,
 };
 
-use crate::{BuildError, PendingBlocksAPI, StateProcessorError, TransactionWithLogs, metrics::Metrics};
+use crate::{
+    BuildError, PendingBlocksAPI, StateProcessorError, TransactionWithLogs, metrics::Metrics,
+};
 
 /// Builder for [`PendingBlocks`].
 #[derive(Debug)]

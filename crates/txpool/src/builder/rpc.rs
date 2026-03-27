@@ -11,8 +11,8 @@ use jsonrpsee::{
 use reth_transaction_pool::TransactionPool;
 use tracing::debug;
 
-use crate::{BasePooledTransaction, ValidatedTransaction};
 use super::metrics::Metrics as BuilderApiMetrics;
+use crate::{BasePooledTransaction, ValidatedTransaction};
 
 /// RPC interface for submitting pre-validated transactions to a block builder.
 #[rpc(server, namespace = "base")]

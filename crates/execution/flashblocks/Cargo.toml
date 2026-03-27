@@ -71,7 +71,6 @@ jsonrpsee-types.workspace = true
 serde = { workspace = true, features = ["std"] }
 
 # metrics
-metrics.workspace = true
 base-metrics = { workspace = true, features = ["metrics"] }
 
 # misc

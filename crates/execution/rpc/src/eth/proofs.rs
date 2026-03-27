@@ -14,8 +14,8 @@ use jsonrpsee_types::error::ErrorObject;
 use reth_provider::StateProofProvider;
 use reth_rpc_api::eth::helpers::FullEthApi;
 
-use crate::state::OpStateProviderFactory;
 use crate::metrics::EthApiExtMetrics;
+use crate::state::OpStateProviderFactory;
 
 #[cfg_attr(not(test), rpc(server, namespace = "eth"))]
 #[cfg_attr(test, rpc(server, client, namespace = "eth"))]
@@ -45,9 +45,7 @@ where
 {
     /// Creates a new instance of the `EthApiExt`.
     pub fn new(eth_api: Eth, preimage_store: OpProofsStorage<P>) -> Self {
-        Self {
-            state_provider_factory: OpStateProviderFactory::new(eth_api, preimage_store),
-        }
+        Self { state_provider_factory: OpStateProviderFactory::new(eth_api, preimage_store) }
     }
 }
 

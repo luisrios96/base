@@ -80,25 +80,46 @@ macro_rules! define_metrics_struct {
                 );
             )*
 
-            /// Registers human-readable descriptions for all metrics.
-            #[cfg(feature = "metrics")]
-            pub fn describe() {
-                $(
-                    $crate::__describe_metric!($scope, $field, $kind, $desc);
-                )*
-            }
-
-            /// No-op when the `metrics` feature is disabled.
-            #[cfg(not(feature = "metrics"))]
-            #[inline(always)]
-            pub fn describe() {}
+            $crate::__define_describe_fn!(
+                $($scope, $field, $kind, $desc);*
+            );
         }
     };
 }
 
-/// Internal — generates a single metric accessor function.
+/// Internal — generates the `describe()` function.
+/// When the `metrics` feature is enabled, it emits describe calls;
+/// otherwise it emits a no-op.
 #[doc(hidden)]
 #[macro_export]
+#[cfg(feature = "metrics")]
+macro_rules! __define_describe_fn {
+    ($($scope:ident, $field:ident, $kind:ident, $desc:expr);*) => {
+        /// Registers human-readable descriptions for all metrics.
+        pub fn describe() {
+            $(
+                $crate::__describe_metric!($scope, $field, $kind, $desc);
+            )*
+        }
+    };
+}
+
+/// Internal — no-op `describe()` when `metrics` is disabled.
+#[doc(hidden)]
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! __define_describe_fn {
+    ($($scope:ident, $field:ident, $kind:ident, $desc:expr);*) => {
+        /// No-op when the `metrics` feature is disabled.
+        #[inline(always)]
+        pub fn describe() {}
+    };
+}
+
+/// Internal — generates a single metric accessor function (metrics enabled).
+#[doc(hidden)]
+#[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! __define_metric_fn {
     ($scope:ident, $field:ident, counter; label = $l1:ident; label = $l2:ident) => {
         $crate::__define_metric_fn!(@emit counter Counter @fn2 $scope, $field, $l1, $l2);
@@ -129,39 +150,73 @@ macro_rules! __define_metric_fn {
     };
     (@emit $macro_name:ident $ret:ident @fn2 $scope:ident, $field:ident, $l1:ident, $l2:ident) => {
         #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(feature = "metrics")]
         #[allow(unused)]
         pub fn $field($l1: impl Into<::metrics::SharedString>, $l2: impl Into<::metrics::SharedString>) -> ::metrics::$ret {
             ::metrics::$macro_name!(concat!(stringify!($scope), ".", stringify!($field)), stringify!($l1) => $l1, stringify!($l2) => $l2)
         }
+    };
+    (@emit $macro_name:ident $ret:ident @fn1 $scope:ident, $field:ident, $l:ident) => {
         #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(not(feature = "metrics"))]
+        #[allow(unused)]
+        pub fn $field($l: impl Into<::metrics::SharedString>) -> ::metrics::$ret {
+            ::metrics::$macro_name!(concat!(stringify!($scope), ".", stringify!($field)), stringify!($l) => $l)
+        }
+    };
+    (@emit $macro_name:ident $ret:ident @fn0 $scope:ident, $field:ident) => {
+        #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
+        #[allow(unused)]
+        pub fn $field() -> ::metrics::$ret {
+            ::metrics::$macro_name!(concat!(stringify!($scope), ".", stringify!($field)))
+        }
+    };
+}
+
+/// Internal — generates a single metric accessor function (metrics disabled).
+#[doc(hidden)]
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! __define_metric_fn {
+    ($scope:ident, $field:ident, counter; label = $l1:ident; label = $l2:ident) => {
+        $crate::__define_metric_fn!(@emit counter Counter @fn2 $scope, $field, $l1, $l2);
+    };
+    ($scope:ident, $field:ident, gauge; label = $l1:ident; label = $l2:ident) => {
+        $crate::__define_metric_fn!(@emit gauge Gauge @fn2 $scope, $field, $l1, $l2);
+    };
+    ($scope:ident, $field:ident, histogram; label = $l1:ident; label = $l2:ident) => {
+        $crate::__define_metric_fn!(@emit histogram Histogram @fn2 $scope, $field, $l1, $l2);
+    };
+    ($scope:ident, $field:ident, counter; label = $l:ident) => {
+        $crate::__define_metric_fn!(@emit counter Counter @fn1 $scope, $field, $l);
+    };
+    ($scope:ident, $field:ident, gauge; label = $l:ident) => {
+        $crate::__define_metric_fn!(@emit gauge Gauge @fn1 $scope, $field, $l);
+    };
+    ($scope:ident, $field:ident, histogram; label = $l:ident) => {
+        $crate::__define_metric_fn!(@emit histogram Histogram @fn1 $scope, $field, $l);
+    };
+    ($scope:ident, $field:ident, counter) => {
+        $crate::__define_metric_fn!(@emit counter Counter @fn0 $scope, $field);
+    };
+    ($scope:ident, $field:ident, gauge) => {
+        $crate::__define_metric_fn!(@emit gauge Gauge @fn0 $scope, $field);
+    };
+    ($scope:ident, $field:ident, histogram) => {
+        $crate::__define_metric_fn!(@emit histogram Histogram @fn0 $scope, $field);
+    };
+    (@emit $macro_name:ident $ret:ident @fn2 $scope:ident, $field:ident, $l1:ident, $l2:ident) => {
+        #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
         #[inline(always)]
         #[allow(unused)]
         pub fn $field<S1, S2>(_: S1, _: S2) -> $crate::NoopMetric { $crate::NoopMetric }
     };
     (@emit $macro_name:ident $ret:ident @fn1 $scope:ident, $field:ident, $l:ident) => {
         #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(feature = "metrics")]
-        #[allow(unused)]
-        pub fn $field($l: impl Into<::metrics::SharedString>) -> ::metrics::$ret {
-            ::metrics::$macro_name!(concat!(stringify!($scope), ".", stringify!($field)), stringify!($l) => $l)
-        }
-        #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(not(feature = "metrics"))]
         #[inline(always)]
         #[allow(unused)]
         pub fn $field<S>(_: S) -> $crate::NoopMetric { $crate::NoopMetric }
     };
     (@emit $macro_name:ident $ret:ident @fn0 $scope:ident, $field:ident) => {
         #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(feature = "metrics")]
-        #[allow(unused)]
-        pub fn $field() -> ::metrics::$ret {
-            ::metrics::$macro_name!(concat!(stringify!($scope), ".", stringify!($field)))
-        }
-        #[doc = concat!("Returns the `", stringify!($field), "` ", stringify!($macro_name), ".")]
-        #[cfg(not(feature = "metrics"))]
         #[inline(always)]
         #[allow(unused)]
         pub fn $field() -> $crate::NoopMetric { $crate::NoopMetric }
@@ -195,17 +250,20 @@ macro_rules! __describe_metric {
 /// timer.stop();
 /// ```
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! timed {
     ($metric_handle:expr) => {{
-        #[cfg(feature = "metrics")]
-        {
-            $crate::DropTimer::new($metric_handle)
-        }
-        #[cfg(not(feature = "metrics"))]
-        {
-            let _ = &$metric_handle;
-            $crate::NoopDropTimer
-        }
+        $crate::DropTimer::new($metric_handle)
+    }};
+}
+
+/// No-op version of [`timed!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! timed {
+    ($metric_handle:expr) => {{
+        let _ = &$metric_handle;
+        $crate::NoopDropTimer
     }};
 }
 
@@ -232,76 +290,94 @@ macro_rules! time {
 
 /// Sets a metric value, optionally with a specified label.
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! set {
     (counter, $metric:path, $key:expr, $value:expr, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::counter!($metric, $key => $value).absolute($amount);
     };
     ($instrument:ident, $metric:path, $key:expr, $value:expr, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric, $key => $value).set($amount);
     };
     (counter, $metric:path, $value:expr, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::counter!($metric, "type" => $value).absolute($amount);
     };
     ($instrument:ident, $metric:path, $value:expr, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric, "type" => $value).set($amount);
     };
     (counter, $metric:path, $value:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::counter!($metric).absolute($value);
     };
     ($instrument:ident, $metric:path, $value:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric).set($value);
     };
 }
 
+/// No-op version of [`set!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! set {
+    ($($tt:tt)*) => {};
+}
+
 /// Increments a metric value, optionally with a specified label.
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! inc {
     ($instrument:ident, $metric:path, $value:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric, "type" => $value).increment(1);
     };
     ($instrument:ident, $metric:path $(, $label_key:expr $(=> $label_value:expr)?)*$(,)?) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric $(, $label_key $(=> $label_value)?)*).increment(1);
     };
     ($instrument:ident, $metric:path, $value:expr $(, $label_key:expr $(=> $label_value:expr)?)*$(,)?) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric $(, $label_key $(=> $label_value)?)*).increment($value);
     };
 }
 
+/// No-op version of [`inc!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! inc {
+    ($($tt:tt)*) => {};
+}
+
 /// Decrements a metric value, optionally with a specified label.
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! dec {
     ($instrument:ident, $metric:path, $value:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric, "type" => $value).decrement(1.0);
     };
     ($instrument:ident, $metric:path $(, $label_key:expr $(=> $label_value:expr)?)*$(,)?) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric $(, $label_key $(=> $label_value)?)*).decrement(1.0);
     };
     ($instrument:ident, $metric:path, $value:expr $(, $label_key:expr $(=> $label_value:expr)?)*$(,)?) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric $(, $label_key $(=> $label_value)?)*).decrement($value);
     };
 }
 
+/// No-op version of [`dec!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! dec {
+    ($($tt:tt)*) => {};
+}
+
 /// Records a value, optionally with a specified label.
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! record {
     ($instrument:ident, $metric:path, $key:expr, $value:expr, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric, $key => $value).record($amount);
     };
     ($instrument:ident, $metric:path, $amount:expr) => {
-        #[cfg(feature = "metrics")]
         metrics::$instrument!($metric).record($amount);
     };
+}
+
+/// No-op version of [`record!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! record {
+    ($($tt:tt)*) => {};
 }

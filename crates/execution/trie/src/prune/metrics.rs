@@ -27,10 +27,8 @@ impl Metrics {
             Self::pruned_blocks().set(blocks_pruned as f64);
 
             let wc = &result.write_counts;
-            Self::account_trie_updates_written()
-                .set(wc.account_trie_updates_written_total as f64);
-            Self::storage_trie_updates_written()
-                .set(wc.storage_trie_updates_written_total as f64);
+            Self::account_trie_updates_written().set(wc.account_trie_updates_written_total as f64);
+            Self::storage_trie_updates_written().set(wc.storage_trie_updates_written_total as f64);
             Self::hashed_accounts_written().set(wc.hashed_accounts_written_total as f64);
             Self::hashed_storages_written().set(wc.hashed_storages_written_total as f64);
         }

@@ -68,16 +68,19 @@ impl Drop for InflightCounter {
 /// // gauge decremented when _guard is dropped
 /// ```
 #[macro_export]
+#[cfg(feature = "metrics")]
 macro_rules! inflight {
     ($gauge:expr $(,)?) => {{
-        #[cfg(feature = "metrics")]
-        {
-            $crate::InflightCounter::new($gauge)
-        }
-        #[cfg(not(feature = "metrics"))]
-        {
-            let _ = &$gauge;
-            $crate::InflightCounter::new()
-        }
+        $crate::InflightCounter::new($gauge)
+    }};
+}
+
+/// No-op version of [`inflight!`] when `metrics` is disabled.
+#[macro_export]
+#[cfg(not(feature = "metrics"))]
+macro_rules! inflight {
+    ($gauge:expr $(,)?) => {{
+        let _ = &$gauge;
+        $crate::InflightCounter::new()
     }};
 }
